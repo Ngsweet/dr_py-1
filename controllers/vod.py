@@ -3,6 +3,7 @@
 # File  : vod.py
 # Author: DaShenHan&道长-----先苦后甜，任凭晚风拂柳颜------
 # Date  : 2022/9/6
+import functools
 import json
 
 from flask import Blueprint,abort,request,render_template,render_template_string,jsonify,make_response,redirect,current_app
@@ -24,7 +25,6 @@ from concurrent.futures import ThreadPoolExecutor,as_completed,thread  # 引入�
 from quickjs import Function,Context
 import ujson
 vod = Blueprint("vod", __name__)
-
 
 def search_one_py(rule, wd, before: str = ''):
     t1 = time()
@@ -134,6 +134,7 @@ def merged_hide(merged_rules):
     hide_rule_names = list(map(lambda x: x['name'], hide_rules))
     # print('隐藏:',hide_rule_names)
     all_cnt = len(merged_rules)
+    # print(merged_rules)
 
     def filter_show(x):
         # name = x['api'].split('rule=')[1].split('&')[0] if 'rule=' in x['api'] else x['key'].replace('dr_','')
@@ -144,6 +145,7 @@ def merged_hide(merged_rules):
     merged_rules = list(filter(filter_show, merged_rules))
     # print('隐藏后:',merged_rules)
     logger.info(f'数据库筛选隐藏规则耗时{get_interval(t1)}毫秒,共计{all_cnt}条规则,隐藏后可渲染{len(merged_rules)}条规则')
+    # merged_rules = []
     return merged_rules
 
 def disable_exit_for_threadpool_executor():
@@ -151,27 +153,104 @@ def disable_exit_for_threadpool_executor():
     import concurrent.futures
     atexit.unregister(concurrent.futures.thread._python_exit)
 
-def multi_search(wd):
+def sort_lsg_rules(sites:list):
+    """
+     查询结果按order和write_date 联合排序
+    :param sites:
+    :return:
+    """
+    def comp(x, y):
+        if x['order'] > y['order']:
+            return 1
+        elif x['order'] < y['order']:
+            return - 1
+        else:
+            if x['write_date'] < y['write_date']:
+                return 1
+            elif x['write_date'] > y['write_date']:
+                return -1
+            else:
+                return 0
+
+    sites.sort(key=functools.cmp_to_key(comp), reverse=False)
+    return sites
+
+def sort_lsg_rules2(sites:list,lsg_rule_names:list):
+    """
+     查询结果按order和write_date 联合排序
+    :param sites:
+    :return:
+    """
+    def comp(x, y):
+        try:
+            x1 = lsg_rule_names.index(x)
+        except:
+            x1 = 999
+
+        try:
+            y1 = lsg_rule_names.index(y)
+        except:
+            y1 = 999
+
+        if x1 >= y1:
+            return 1
+        elif x1 < y1:
+            return - 1
+
+    sites.sort(key=functools.cmp_to_key(comp), reverse=False)
+    return sites
+
+def getSearchSites():
+    val = {}
     lsg = storage_service()
-    env = get_env()
-    t1 = time()
     try:
         timeout = round(int(lsg.getItem('SEARCH_TIMEOUT',5000))/1000,2)
     except:
         timeout = 5
+    val['timeout'] = timeout
     rules = getRules('js')['list']
-    rule_names = list(map(lambda x:x['name'],rules))
+    rule_names = list(map(lambda x: x['name'], rules))
     rules_exclude = ['drpy']
     new_rules = list(filter(lambda x: x.get('searchable', 0) and x.get('name', '') not in rules_exclude, rules))
-    search_sites = [new_rule['name'] for new_rule in new_rules]
-    # print(search_sites)
-    nosearch_sites = set(rule_names) ^ set(search_sites)
+    total_search = [new_rule['name'] for new_rule in new_rules]
+    nosearch_sites = set(rule_names) ^ set(total_search)
     nosearch_sites.remove('drpy')
-    # print(nosearch_sites)
-    logger.info(f'开始聚搜{wd},共计{len(search_sites)}个规则,聚搜超时{timeout}秒')
+    val['total_search'] = total_search
+    val['nosearch_sites'] = list(nosearch_sites)
+    search_sites = merged_hide(total_search)
+    lsg_rules = rules_service()
+    lsg_rule_list = lsg_rules.query_all()
+    lsg_rule_list = list(filter(lambda x: x['name'] in search_sites, lsg_rule_list))
+    lsg_rule_names = list(map(lambda x: x['name'], lsg_rule_list))
+
+    search_sites = sort_lsg_rules2(search_sites, lsg_rule_names)
+    search_limit = lsg.getItem('SEARCH_LIMIT', 24)
+    try:
+        search_limit = int(search_limit)
+    except:
+        search_limit = 0
+    if search_limit < 1:
+        search_limit = 0
+    search_sites = search_sites[:search_limit]
+    val['search_limit'] = search_limit
+    val['search_sites'] = search_sites
+    return val
+
+def multi_search(wd):
+    t1 = time()
+    val = getSearchSites()
+    timeout = val['timeout']
+    total_search = val['total_search']
+    nosearch_sites = val['nosearch_sites']
+    search_limit = val['search_limit']
+    search_sites = val['search_sites']
+
+    env = get_env()
+    logger.info(f'开始聚搜{wd},共计{len(total_search)}个规则,聚搜超时{timeout}秒')
     logger.info(f'不支持聚搜的规则,共计{len(nosearch_sites)}个规则:{",".join(nosearch_sites)}')
-    search_sites = merged_hide(search_sites)
-    # print(search_sites)
+    msearch_msg = f'搜索限制条数:{search_limit}/{len(search_sites)} {search_sites}'
+    logger.info(msearch_msg)
+    print(msearch_msg)
     # search_sites = []
     res = []
     if len(search_sites) > 0:
@@ -199,6 +278,14 @@ def multi_search(wd):
     return jsonify({
         "list": res
     })
+
+@vod.route('/vods')
+def vods_search():
+    val = getSearchSites()
+    print(val)
+
+    # return jsonify(val)
+    return render_template('show_search.html',val=val)
 
 @vod.route('/vod')
 def vod_home():

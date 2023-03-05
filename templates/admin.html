@@ -26,6 +26,11 @@
             location.href = '/vod?{% if js0_password %}pwd={{js0_password}}&{% endif %}rule='+rule;
         });
 
+        $(".view_search").click(function(){
+            let rule = this.getAttribute('value').trim();
+            location.href = '/vod?{% if js0_password %}pwd={{js0_password}}&{% endif %}rule='+rule+'&wd=斗罗大陆';
+        });
+
         $("#checkUpdate").click(function(){
             console.log('开始检查升级...');
             $.get("/admin/get_ver",function(data,status){
@@ -219,6 +224,7 @@ function getFileSize(fileObj) {
             id="lives">直播列表</a></button>
     <button type="button" class="yongyin"><a href="javascript:void(0);" class="funcbtn"
             id="logtail">在线日志</a></button>
+    <button type="button" class="yongyin4"><a href="/vods" class="funcbtn" target="_blank">搜索看板</a></button>
 
 
     <input id="live_url" value="{{live_url}}" style="display: none">
@@ -239,7 +245,8 @@ function getFileSize(fileObj) {
 {% for rule in rules.list %}
     <div class="red">
          <div class="mz"><a class="view" href="javascript:void(0);">{{ rule.name }}</a></div>
-        <div class="sj"><a class="view_home" href="javascript:void(0);" value="{{ rule.name }}">主页数据预览</a></div>
+        <div class="sj"><a class="view_home" href="javascript:void(0);" value="{{ rule.name }}">主页</a></div>
+        <div class="ss"><a class="view_search" href="javascript:void(0);" value="{{ rule.name }}">搜索</a></div>
         <div class="sc"><a class="clear" href="javascript:void(0);" value="{{ rule.name }}">删除</a></div>
     </div>
  {% endfor %}

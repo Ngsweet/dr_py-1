@@ -24,7 +24,7 @@ from utils.log import logger
 from utils.update import getLocalVer,getHotSuggest
 from js.rules import getJxs
 import random
-from utils.web import getParmas
+from utils.web import getParmas,verfy_token
 import functools
 
 
@@ -137,6 +137,12 @@ def custom_static_libs(filename):
     # print(filename)
     return send_from_directory('libs', filename)
 
+@home.route('/js/<path:filename>')
+def custom_static_js(filename):
+    # 自定义静态目录 {{ url_for('custom_static',filename='help.txt')}}
+    # print(filename)
+    return send_from_directory('js', filename)
+
 # @home.route('/txt/<name>')
 # def get_txt_files(name):
 #     base_path = 'txt'
@@ -170,8 +176,8 @@ def get_lives():
         try:
             live_text = base64Decode(live_text)
             logger.info(f'{path} base64解码完毕')
-        except:
-            pass
+        except Exception as e:
+            logger.info(f'{path} base64解码失败:{e}')
     response = make_response(live_text)
     response.headers['Content-Type'] = 'text/plain; charset=utf-8'
     return response
@@ -209,6 +215,8 @@ def merged_hide(merged_config):
     def filter_show(x):
         name = x['api'].split('rule=')[1].split('&')[0] if 'rule=' in x['api'] else x['key'].replace('dr_','')
         # print(name)
+        if not str(x['key']).startswith('dr_') and name == 'drpy':
+            name = x['key']
         return name not in hide_rule_names
 
     merged_config['sites'] = list(filter(filter_show, merged_config['sites']))
@@ -264,7 +272,7 @@ def config_render(mode):
     merged_hide(merged_config)
     # response = make_response(html)
     # print(len(merged_config['sites']))
-    # print(merged_config['sites'])
+    print(merged_config['sites'])
     merged_config['sites'] = sort_sites_by_order(merged_config['sites'],js_mode)
     # print(merged_config['parses'])
     parses = sort_parses_by_order(merged_config['parses'],host)
@@ -312,6 +320,9 @@ def sort_sites_by_order(sites,js_mode=0):
         site_name = sites[i]['api'].split('rule=')[1].split('&')[0] if 'rule=' in sites[i]['api'] else sites[i]['key']
         if js_mode and str(site_name).startswith('dr'):
             site_name = site_name.replace('dr_','')
+        if not str(sites[i]['key']).startswith('dr_') and site_name == 'drpy':
+            site_name = sites[i]['key']
+            # print(sites[i])
         # print(site_name)
         if site_name in rule_names:
             site_rule = rule_list[rule_names.index(site_name)]
@@ -376,6 +387,8 @@ def sort_parses_by_order(parses,host):
 
 @home.route('/configs')
 def config_gen():
+    if not verfy_token():
+        return R.failed('请登录后再试')
     # 生成文件
     os.makedirs('txt',exist_ok=True)
     new_conf = cfg
